@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>60fps Smooth Wavy Video with Border Noise</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+            background-color: #000;
+        }
+        video {
+            display: none; 
+        }
+    </style>
+</head>
+<body>
+
+    <video id="sourceVideo" src="video.mp4" autoplay loop muted playsinline crossorigin="anonymous"></video>
+    <canvas id="displayCanvas" width="1080" height="1920"></canvas>
+
+    <script>
+        const video = document.getElementById('sourceVideo');
+        const canvas = document.getElementById('displayCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const BLOCK_SIZE = 30; 
+        const cols = Math.ceil(canvas.width / BLOCK_SIZE); 
+        const rows = Math.ceil(canvas.height / BLOCK_SIZE); 
+
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = cols;
+        offscreenCanvas.height = rows;
+        const offCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
+
+        const baseImages = [];
+        const overlayImages = []; 
+        let loadedImages = 0;
+        const totalImages = 24;
+
+        // Pre-allocate arrays for 60fps performance
+        const xDistortions = new Float32Array(cols);
+        const yDistortions = new Float32Array(rows);
+
+        // Load and separate the images
+        for (let i = 1; i <= totalImages; i++) {
+            const img = new Image();
+            img.src = `img/${i}.png`; 
+            img.onload = () => {
+                loadedImages++;
+                if (loadedImages === totalImages) {
+                    // Start the animation loop once everything is loaded
+                    requestAnimationFrame(animate); 
+                }
+            };
+            
+            // Strictly assign 13-18 to the overlay, and 1-12 + 19-24 to the base grid
+            if (i >= 13 && i <= 18) {
+                overlayImages.push(img);
+            } else {
+                baseImages.push(img);
+            }
+        }
+
+        // Noise function for the top/bottom wave
+        function getNoise(x, y, t) {
+            const n = Math.sin(x * 0.15 + t) + Math.sin((y - t * 8) * 0.15) + Math.sin((x + y) * 0.1 + t * 1.5);
+            return (n + 3) / 6; 
+        }
+
+        function animate() {
+            // Keep requesting the frame immediately so the loop never dies
+            requestAnimationFrame(animate);
+
+            // Wait for the video to have enough data to draw (readyState 2+)
+            if (video.readyState < 2) return; 
+
+            // Smooth forward-flowing time variable
+            const time = Date.now() * 0.002;
+
+            // Sample the video pixels once per frame
+            offCtx.drawImage(video, 0, 0, cols, rows);
+            const frameData = offCtx.getImageData(0, 0, cols, rows);
+            const data = frameData.data;
+
+            // Clear the main canvas
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // PRE-CALCULATE MATH: This prevents 7,000+ calculations per frame
+            for(let x = 0; x < cols; x++) xDistortions[x] = Math.cos(x * 0.1 + time) * 4;
+            for(let y = 0; y < rows; y++) yDistortions[y] = Math.sin(y * 0.05 + time) * 4;
+
+            // --- 1. DRAW BASE GRID (Uses images 1-12 and 19-24) ---
+            ctx.globalCompositeOperation = 'screen';
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    
+                    let sampleX = Math.floor(x + yDistortions[y]);
+                    let sampleY = Math.floor(y + xDistortions[x]);
+
+                    sampleX = Math.max(0, Math.min(sampleX, cols - 1));
+                    sampleY = Math.max(0, Math.min(sampleY, rows - 1));
+
+                    const index = (sampleY * cols + sampleX) * 4;
+                    const brightness = (0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2]);
+
+                    // Maps brightness exactly across the 18 base images
+                    let imgIndex = Math.floor((brightness / 256) * baseImages.length);
+                    imgIndex = Math.max(0, Math.min(imgIndex, baseImages.length - 1));
+
+                    ctx.drawImage(baseImages[imgIndex], x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                }
+            }
+
+            // --- 2. DRAW NOISE WAVE (BORDERS ONLY) ---
+            ctx.globalCompositeOperation = 'source-over';
+
+            const topBorderEnd = rows * 0.25;   
+            const bottomBorderStart = rows * 0.75; 
+
+            for (let y = 0; y < rows; y++) {
+                // FLOWER PROTECTION: Skip middle section
+                if (y > topBorderEnd && y < bottomBorderStart) continue; 
+
+                for (let x = 0; x < cols; x++) {
+                    const noiseVal = getNoise(x, y, time);
+                    if (noiseVal > 0.55) {
+                        let waveIdx = Math.floor(((noiseVal - 0.55) / 0.45) * overlayImages.length);
+                        waveIdx = Math.max(0, Math.min(waveIdx, overlayImages.length - 1));
+
+                        ctx.drawImage(overlayImages[waveIdx], x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
+                }
+            }
+
+            // --- 3. DRAW EXACT VIDEO GREEN TRACKER ---
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    
+                    let sampleX = Math.floor(x + yDistortions[y]);
+                    let sampleY = Math.floor(y + xDistortions[x]);
+                    sampleX = Math.max(0, Math.min(sampleX, cols - 1));
+                    sampleY = Math.max(0, Math.min(sampleY, rows - 1));
+
+                    const index = (sampleY * cols + sampleX) * 4;
+                    const r = data[index];
+                    const g = data[index + 1];
+                    const b = data[index + 2];
+
+                    // Identify purely green pixels
+                    const greenFactor = g - (r * 0.5 + b * 0.5);
+
+                    if (greenFactor > 40) {
+                        let overlayIdx = Math.floor((Math.min(greenFactor, 150) / 150) * overlayImages.length);
+                        overlayIdx = Math.max(0, Math.min(overlayIdx, overlayImages.length - 1));
+
+                        ctx.drawImage(overlayImages[overlayIdx], x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

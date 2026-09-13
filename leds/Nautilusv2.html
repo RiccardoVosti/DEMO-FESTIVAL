@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid HSL Canvas Engine - Vertical Linear Loop</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: row; 
+            background-color: #050505; 
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        #grid-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            width: 100%;
+            padding: 0; 
+            background-color: #000000; 
+            position: relative;
+            z-index: 1;
+        }
+
+        canvas {
+            display: block;
+            max-height: 100%;
+            max-width: 100%;
+            aspect-ratio: 9 / 16;
+            background: #000;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+        }
+
+        #hudToggle {
+            display: none;
+            position: fixed;
+            top: 20px; 
+            right: 20px; 
+            z-index: 30;
+            background-color: #ff3366; 
+            color: #ffffff; 
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease;
+        }
+
+        #hudToggle:active {
+            transform: scale(0.95);
+        }
+
+        #hudToggle svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        #hud {
+            width: 320px;
+            height: 100vh;
+            background: #0a0a0a;
+            color: #ffffff;
+            padding: 30px 25px;
+            border-left: 1px solid #222;
+            display: flex;
+            flex-direction: column;
+            gap: 20px; 
+            z-index: 20;
+            overflow-y: auto;
+            flex-shrink: 0;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #hud-logo {
+            width: 100%;
+            max-width: 140px;
+            align-self: center;
+            border-radius: 4px;
+            object-fit: contain;
+            margin-bottom: -5px; 
+        }
+
+        .hud-header {
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffffff;
+            border-bottom: 1px solid #333;
+            padding-bottom: 12px;
+            margin-bottom: 0px;
+            letter-spacing: -0.5px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px; 
+        }
+
+        .control-group label {
+            font-size: 13px;
+            font-weight: 400; 
+            color: #aaaaaa;
+            letter-spacing: 0.3px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+
+        .control-group span {
+            color: #ff3366;
+            font-weight: 600; 
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 3px; 
+            background: #333;
+            border-radius: 2px;
+            outline: none;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px; 
+            height: 16px;
+            border-radius: 50%;
+            background: #ff3366;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ff3366;
+            cursor: pointer;
+            border: none;
+        }
+
+        .note {
+            font-size: 11.5px;
+            font-weight: 400; 
+            color: #777;
+            line-height: 1.4;
+            margin-top: 0px; 
+        }
+
+        .preset-specific {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            background: #111;
+            border-radius: 6px;
+            border: 1px solid #222;
+            margin-top: 4px;
+        }
+
+        .btn-wrapper {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+            padding-bottom: 20px; 
+        }
+
+        #exportBtn {
+            width: 100%;
+            padding: 14px;
+            background-color: #ffffff;
+            color: #000000;
+            border: none;
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600; 
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        #exportBtn:hover {
+            background-color: #dddddd;
+            transform: translateY(-2px);
+        }
+
+        #exportBtn.recording {
+            background-color: #ff3333;
+            color: #ffffff;
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            #hudToggle {
+                display: flex;
+            }
+
+            #hud {
+                position: fixed;
+                top: auto;
+                bottom: 0;
+                right: 0;
+                left: 0;
+                width: 100%;
+                height: auto;
+                max-height: 75vh;
+                transform: translateY(100%); 
+                box-shadow: 0 -10px 30px rgba(0,0,0,0.8);
+                border-left: none;
+                border-top: 1px solid #222;
+                border-top-left-radius: 20px;
+                border-top-right-radius: 20px;
+                padding: 20px;
+            }
+
+            #hud.open {
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="grid-wrapper">
+        <canvas id="mainCanvas" width="1080" height="1920"></canvas>
+    </div>
+
+    <button id="hudToggle" aria-label="Toggle Controls">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+    </button>
+
+    <div id="hud">
+        <img src="nautilus.png" alt="Nautilus Logo" id="hud-logo" onerror="this.style.display='none'">
+
+        <div class="hud-header">Animation Controls</div>
+        
+        <div class="control-group">
+            <label for="speedSlider">Loops per 10s <span><span id="speedValue">1</span>x</span></label>
+            <input type="range" id="speedSlider" min="1" max="5" value="1" step="1">
+            <div class="note">Integer multipliers guarantee perfect 10s loop closures.</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="colsSlider">Grid Columns <span><span id="colsValue">12</span></span></label>
+            <input type="range" id="colsSlider" min="4" max="40" value="12" step="1">
+            <div class="note">Number of circles horizontally.</div>
+        </div>
+
+        <div class="control-group">
+            <label for="rowsSlider">Grid Rows <span><span id="rowsValue">20</span></span></label>
+            <input type="range" id="rowsSlider" min="4" max="60" value="20" step="1">
+            <div class="note">Number of circles vertically.</div>
+        </div>
+
+        <div class="control-group preset-specific" id="spec_hue_shift">
+            <label for="hueChaos">Color Keyframes <span><span id="val_hueChaos">4</span></span></label>
+            <input type="range" id="hueChaos" min="2" max="10" value="4" step="1" class="spec-slider">
+            <div class="note">Amount of distinct color shifts per cycle.</div>
+        </div>
+
+        <div class="btn-wrapper">
+            <div class="control-group">
+                <button id="exportBtn">Export to MP4 (10s @ 25fps)</button>
+                <div class="note" style="text-align: center; margin-top: 8px;">Direct 25fps vertical canvas video capture.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Full Vibrant Chromatic Spectrum Palette ---
+        const vibrantPalette = [
+            { h: 350, s: 100, l: 55 },  // Vibrant Crimson / Red
+            { h: 22,  s: 100, l: 52 },  // Electric Orange
+            { h: 48,  s: 100, l: 50 },  // Golden Yellow
+            { h: 130, s: 90,  l: 48 },  // Vivid Emerald Green
+            { h: 175, s: 100, l: 45 },  // Bright Cyan / Turquoise
+            { h: 215, s: 100, l: 55 },  // Electric Blue
+            { h: 270, s: 95,  l: 58 },  // Deep Violet / Purple
+            { h: 320, s: 100, l: 55 },  // Hot Magenta / Pink
+            { h: 0,   s: 0,   l: 98 },  // Pure Bright White
+            { h: 240, s: 30,  l: 8 }    // Deep Obsidian Dark
+        ];
+
+        // --- Canvas & DOM Setup ---
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false }); 
+        const wrapper = document.getElementById('grid-wrapper');
+
+        const hud = document.getElementById('hud');
+        const hudToggle = document.getElementById('hudToggle');
+        
+        const speedSlider = document.getElementById('speedSlider');
+        const colsSlider = document.getElementById('colsSlider');
+        const rowsSlider = document.getElementById('rowsSlider');
+        const hueChaosSlider = document.getElementById('hueChaos');
+        
+        const speedValue = document.getElementById('speedValue');
+        const colsValue = document.getElementById('colsValue');
+        const rowsValue = document.getElementById('rowsValue');
+        const exportBtn = document.getElementById('exportBtn');
+
+        let gridCols = parseInt(colsSlider.value);
+        let gridRows = parseInt(rowsSlider.value);
+        let cells = [];
+        
+        let cellDrawSize = 0;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        // Global animation clock
+        let loopStartTime = performance.now();
+        const baseDurationMs = 10000; // Fixed 10s duration
+
+        // Interpolation Math
+        function lerp(start, end, t) {
+            return start + (end - start) * t;
+        }
+
+        function lerpHue(h1, h2, t) {
+            let d = h2 - h1;
+            if (d > 180) h1 += 360;
+            else if (d < -180) h2 += 360;
+            return (h1 + (h2 - h1) * t) % 360;
+        }
+
+        // --- HUD Mobile Drawer ---
+        hudToggle.addEventListener('click', () => {
+            hud.classList.toggle('open');
+        });
+
+        wrapper.addEventListener('click', () => {
+            if (window.innerWidth <= 768 && hud.classList.contains('open')) {
+                hud.classList.remove('open');
+            }
+        });
+
+        // --- Grid Metrics ---
+        function calculateGridMetrics() {
+            const maxW = 1080 / gridCols;
+            const maxH = 1920 / gridRows;
+            cellDrawSize = Math.min(maxW, maxH);
+            
+            const totalDrawWidth = cellDrawSize * gridCols;
+            const totalDrawHeight = cellDrawSize * gridRows;
+            
+            offsetX = (1080 - totalDrawWidth) / 2;
+            offsetY = (1920 - totalDrawHeight) / 2;
+        }
+
+        function getRandomColorTuple() {
+            let temp = [...vibrantPalette];
+            let chosen = [];
+            for (let i = 0; i < 3; i++) {
+                const idx = Math.floor(Math.random() * temp.length);
+                chosen.push(temp.splice(idx, 1)[0]);
+            }
+            return chosen;
+        }
+
+        // --- Grid Generation ---
+        function buildGrid() {
+            calculateGridMetrics();
+            cells = [];
+            
+            let numKeyframes = parseInt(hueChaosSlider.value);
+
+            for (let r = 0; r < gridRows; r++) {
+                for (let c = 0; c < gridCols; c++) {
+                    let phases = [];
+                    for(let i=0; i < numKeyframes; i++) {
+                        phases.push(getRandomColorTuple());
+                    }
+
+                    cells.push({
+                        col: c,
+                        row: r,
+                        phases: phases
+                    });
+                }
+            }
+        }
+
+        // --- Render Engine ---
+        function renderLoop() {
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let speedMult = parseInt(speedSlider.value);
+            let elapsed = performance.now() - loopStartTime;
+            
+            // Cycle t perfectly from 0.0 to 1.0 
+            let currentCycleDuration = baseDurationMs / speedMult;
+            let t = (elapsed % currentCycleDuration) / currentCycleDuration;
+            
+            const radiusOuter = cellDrawSize * 0.5;
+            const radiusMid = radiusOuter * 0.66;
+            const radiusInner = radiusOuter * 0.33;
+            
+            const numPhases = cells[0].phases.length;
+
+            for (let i = 0; i < cells.length; i++) {
+                const cell = cells[i];
+                const cx = offsetX + (cell.col * cellDrawSize) + radiusOuter;
+                const cy = offsetY + (cell.row * cellDrawSize) + radiusOuter;
+
+                // FIXED MATH: Calculate strictly safe float indices to prevent modulo overshoot
+                const floatIndex = t * numPhases;
+                const index = Math.floor(floatIndex) % numPhases;
+                const nextIndex = (index + 1) % numPhases;
+                
+                // Strictly linear fraction between 0.0 and 0.999...
+                const fraction = floatIndex - Math.floor(floatIndex);
+
+                const tA = cell.phases[index];
+                const tB = cell.phases[nextIndex];
+
+                for (let layer = 0; layer < 3; layer++) {
+                    let h = lerpHue(tA[layer].h, tB[layer].h, fraction);
+                    let s = lerp(tA[layer].s, tB[layer].s, fraction);
+                    let l = lerp(tA[layer].l, tB[layer].l, fraction);
+
+                    ctx.beginPath();
+                    if (layer === 0) ctx.arc(cx, cy, radiusOuter, 0, Math.PI * 2);
+                    else if (layer === 1) ctx.arc(cx, cy, radiusMid, 0, Math.PI * 2);
+                    else ctx.arc(cx, cy, radiusInner, 0, Math.PI * 2);
+                    
+                    ctx.fillStyle = `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
+                    ctx.fill();
+                }
+            }
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        // --- UI Listeners ---
+        function updateHUD() {
+            speedValue.innerText = speedSlider.value;
+            colsValue.innerText = colsSlider.value;
+            rowsValue.innerText = rowsSlider.value;
+            document.getElementById('val_hueChaos').innerText = hueChaosSlider.value;
+        }
+
+        function forceGridReset() {
+            gridCols = parseInt(colsSlider.value);
+            gridRows = parseInt(rowsSlider.value);
+            buildGrid();
+        }
+
+        speedSlider.addEventListener('input', updateHUD);
+        hueChaosSlider.addEventListener('input', () => { updateHUD(); forceGridReset(); });
+        colsSlider.addEventListener('input', () => { updateHUD(); forceGridReset(); });
+        rowsSlider.addEventListener('input', () => { updateHUD(); forceGridReset(); });
+
+        // --- Export to MP4 at 25 FPS ---
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        exportBtn.addEventListener('click', async () => {
+            if (isRecording) return; 
+
+            try {
+                // Snap timeline perfectly to 0 at the exact moment recording begins
+                loopStartTime = performance.now();
+                isRecording = true;
+                
+                const stream = canvas.captureStream(25); // Fixed 25fps capture
+                
+                const mimeTypes = [
+                    'video/mp4;codecs=avc1',
+                    'video/mp4',
+                    'video/webm;codecs=vp9',
+                    'video/webm'
+                ];
+                
+                let selectedType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: selectedType,
+                    videoBitsPerSecond: 25000000 
+                });
+
+                recordedChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: selectedType || 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `vibrant-linear-loop-1080x1920.mp4`;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    exportBtn.innerText = "Export to MP4 (10s @ 25fps)";
+                    exportBtn.classList.remove('recording');
+                    isRecording = false;
+
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }, 100);
+                };
+
+                mediaRecorder.start();
+                exportBtn.innerText = "Recording Seamless 10s... (Please Wait)";
+                exportBtn.classList.add('recording');
+
+                // Precisely kill the recording right before it would capture a redundant start frame
+                setTimeout(() => {
+                    if(mediaRecorder.state === "recording") {
+                        mediaRecorder.stop();
+                    }
+                }, baseDurationMs);
+
+            } catch (err) {
+                console.error("Recording error:", err);
+                alert("Canvas recording error: " + err.message);
+                exportBtn.innerText = "Export to MP4 (10s @ 25fps)";
+                exportBtn.classList.remove('recording');
+                isRecording = false;
+            }
+        });
+
+        // Initialize Engine
+        buildGrid();
+        renderLoop();
+    </script>
+</body>
+</html>

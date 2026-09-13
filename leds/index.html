@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix LED - Hope & The Bright Side (Clean)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #000000;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            height: 95vh;
+            aspect-ratio: 9 / 16;
+            background-color: #050505;
+            
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-wrapper">
+        <canvas id="ledCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('ledCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Configurazione della Matrice
+        const COLS = 5; 
+        const ROWS = 9; 
+        const LED_COLS = 8;
+        const LED_ROWS = 8; 
+
+        // GESTIONE DEL TEMPO (Totale 10 Secondi)
+        const TOTAL_DURATION = 10.0;
+        const P1_END = 3.5; 
+        const P2_END = 6.5; 
+
+        // Parametri Fase 1 (Awakening - Lotta per accendersi)
+        const P1_PROPAGATION = 0.15; 
+        const P1_HOLD = 0.6;
+        const P1_FADE = 0.8;
+
+        // Parametri Fase 2 (Snake - Ricerca)
+        const P2_SNAKE_SPEED = 0.04;
+        const P2_HOLD = 0.3;
+        const P2_FADE = 0.8;
+
+        // Parametri Fase 3 (The Bright Side - Esplosione Radiale)
+        const P3_RADIAL_SPEED = 0.25;
+        const P3_HOLD = 0.8;
+        const P3_FADE = 1.5;
+
+        function resizeCanvas() {
+            const rect = canvas.parentNode.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawScrews(width, height) {
+            const edgeOffset = 12; 
+            const radius = 4.5; 
+            const screwPositions = [];
+            const numScrewsX = 3; 
+            const numScrewsY = 5; 
+            
+            for (let i = 0; i < numScrewsX; i++) {
+                let x = edgeOffset + i * ((width - 2 * edgeOffset) / (numScrewsX - 1));
+                screwPositions.push({ x: x, y: edgeOffset }); 
+                screwPositions.push({ x: x, y: height - edgeOffset }); 
+            }
+            
+            for (let i = 1; i < numScrewsY - 1; i++) {
+                let y = edgeOffset + i * ((height - 2 * edgeOffset) / (numScrewsY - 1));
+                screwPositions.push({ x: edgeOffset, y: y }); 
+                screwPositions.push({ x: width - edgeOffset, y: y }); 
+            }
+
+            screwPositions.forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#101014'; 
+                ctx.fill();
+                
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#020202';
+                const cross = radius * 0.55;
+                ctx.beginPath();
+                ctx.moveTo(pos.x - cross, pos.y - cross);
+                ctx.lineTo(pos.x + cross, pos.y + cross);
+                ctx.moveTo(pos.x + cross, pos.y - cross);
+                ctx.lineTo(pos.x - cross, pos.y + cross);
+                ctx.stroke();
+            });
+        }
+
+        function drawMatrix() {
+            const width = canvas.width / (window.devicePixelRatio || 1);
+            const height = canvas.height / (window.devicePixelRatio || 1);
+
+            // DECADIMENTO FOSFORI
+            ctx.fillStyle = 'rgba(5, 5, 6, 0.18)';
+            ctx.fillRect(0, 0, width, height);
+
+            drawScrews(width, height);
+
+            const padding = 6; 
+            const canvasPaddingX = 26; 
+            const canvasPaddingY = 26; 
+
+            const maxSpacingX = (width - canvasPaddingX * 2 - padding * (COLS - 1)) / (COLS * LED_COLS);
+            const maxSpacingY = (height - canvasPaddingY * 2 - padding * (ROWS - 1)) / (ROWS * LED_ROWS);
+            
+            const ledSpacing = Math.min(maxSpacingX, maxSpacingY);
+            const ledRadius = ledSpacing * 0.35;
+
+            const panelWidth = ledSpacing * LED_COLS;
+            const panelHeight = ledSpacing * LED_ROWS;
+
+            const gridTotalWidth = (panelWidth * COLS) + (padding * (COLS - 1));
+            const gridTotalHeight = (panelHeight * ROWS) + (padding * (ROWS - 1));
+
+            const startX = (width - gridTotalWidth) / 2;
+            const startY = (height - gridTotalHeight) / 2;
+
+            const globalTime = (performance.now() / 1000) % TOTAL_DURATION;
+
+            for (let c = 0; c < COLS; c++) {
+                for (let r = 0; r < ROWS; r++) {
+                    
+                    const panelX = startX + c * (panelWidth + padding);
+                    const panelY = startY + r * (panelHeight + padding);
+
+                    let panelBrightness = 0;
+                    let derivedLocalTime = 0;
+                    let crossWave1 = 0; 
+                    let crossWave2 = 0; 
+                    let isFlickering = false;
+
+                    // LOGICA NARRATIVA DELLE TRE FASI
+                    if (globalTime < P1_END) {
+                        let panelDelay = (c % 2 === 0) ? r * P1_PROPAGATION : (ROWS - 1 - r) * P1_PROPAGATION;
+                        derivedLocalTime = globalTime - panelDelay;
+
+                        if (derivedLocalTime > 0 && derivedLocalTime <= P1_HOLD) {
+                            isFlickering = Math.random() > 0.85;
+                            panelBrightness = isFlickering ? 0.4 : 1.0; 
+                            
+                            let n = derivedLocalTime / P1_HOLD;
+                            crossWave1 = Math.min(1.0, n * 2.5); 
+                            crossWave2 = Math.max(0.0, (n - 0.4) * 2.5); 
+                        } else if (derivedLocalTime > P1_HOLD && derivedLocalTime <= P1_HOLD + P1_FADE) {
+                            let progressFade = (derivedLocalTime - P1_HOLD) / P1_FADE;
+                            panelBrightness = 1.0 - progressFade;
+                            crossWave1 = 1.0; 
+                            crossWave2 = 1.0; 
+                        }
+                    } else if (globalTime < P2_END) {
+                        let p2Time = globalTime - P1_END;
+                        let snakeIndex = c * ROWS + r; 
+                        let snakeDelay = snakeIndex * P2_SNAKE_SPEED;
+                        derivedLocalTime = p2Time - snakeDelay;
+
+                        if (derivedLocalTime > 0 && derivedLocalTime <= P2_HOLD) {
+                            panelBrightness = 1.0;
+                            let n = derivedLocalTime / P2_HOLD;
+                            crossWave1 = Math.min(1.0, n * 2);
+                            crossWave2 = Math.max(0.0, (n - 0.5) * 2);
+                        } else if (derivedLocalTime > P2_HOLD && derivedLocalTime <= P2_HOLD + P2_FADE) {
+                            let progressFade = (derivedLocalTime - P2_HOLD) / P2_FADE;
+                            panelBrightness = 1.0 - progressFade;
+                            crossWave1 = 1.0;
+                            crossWave2 = 1.0;
+                        }
+                    } else {
+                        let p3Time = globalTime - P2_END;
+                        
+                        let distToCenter = Math.sqrt(Math.pow(c - 2, 2) + Math.pow(r - 4, 2));
+                        let radialDelay = distToCenter * P3_RADIAL_SPEED;
+                        derivedLocalTime = p3Time - radialDelay;
+
+                        if (derivedLocalTime > 0 && derivedLocalTime <= P3_HOLD) {
+                            panelBrightness = 1.0;
+                            let n = derivedLocalTime / P3_HOLD;
+                            crossWave1 = Math.min(1.0, n * 2);
+                            crossWave2 = Math.max(0.0, (n - 0.5) * 2);
+                        } else if (derivedLocalTime > P3_HOLD && derivedLocalTime <= P3_HOLD + P3_FADE) {
+                            let progressFade = (derivedLocalTime - P3_HOLD) / P3_FADE;
+                            panelBrightness = 1.0 - Math.pow(progressFade, 1.5); 
+                            crossWave1 = 1.0;
+                            crossWave2 = 1.0;
+                        }
+                    }
+
+                    panelBrightness = Math.max(0, panelBrightness);
+                    crossWave1 = Math.min(1.0, Math.max(0, crossWave1));
+                    crossWave2 = Math.min(1.0, Math.max(0, crossWave2));
+
+                    let progressX = c / Math.max(1, COLS - 1);
+                    let progressY = r / Math.max(1, ROWS - 1);
+                    let gradientProgress = (progressX + progressY) / 2;
+                    let hue = 195 - (gradientProgress * 150); 
+                    
+                    let reversedGradientProgress = 1.0 - gradientProgress;
+                    let crossHue = 195 - (reversedGradientProgress * 150);
+                    
+                    let ledActiveColor = `hsla(${hue}, 100%, 65%, ${panelBrightness})`;
+                    let ledShadowColor = `hsl(${hue}, 100%, 55%)`;
+
+                    let isCrossLED, currentLEDColor, currentLEDShadowColor, currentLEDBrightness, isCrossActive, crossAlphaFactor, distStep;
+                    
+                    ctx.fillStyle = 'rgba(18, 18, 21, 0.05)';
+                    ctx.beginPath();
+                    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 3);
+                    ctx.fill();
+
+                    for (let lx = 0; lx < LED_COLS; lx++) {
+                        for (let ly = 0; ly < LED_ROWS; ly++) {
+                            
+                            const ledX = panelX + (ledSpacing / 2) + (lx * ledSpacing);
+                            const ledY = panelY + (ledSpacing / 2) + (ly * ledSpacing);
+
+                            isCrossLED = (lx === 3 || lx === 4) || (ly === 3 || ly === 4);
+                            currentLEDColor = ledActiveColor;
+                            currentLEDShadowColor = ledShadowColor;
+                            currentLEDBrightness = panelBrightness;
+                            isCrossActive = false;
+                            crossAlphaFactor = 1.0;
+
+                            if (isCrossLED && panelBrightness > 0.01) {
+                                let distFromCenterIndex = Math.abs(lx - 3.5) + Math.abs(ly - 3.5);
+                                distStep = Math.ceil(distFromCenterIndex); 
+                                let maxSteps = 4; 
+
+                                let waveLimit1 = crossWave1 * (maxSteps + 0.5); 
+                                let waveLimit2 = crossWave2 * (maxSteps + 0.5); 
+                                
+                                if (distStep <= waveLimit2) {
+                                    // Nessuna alterazione
+                                } else if (distStep <= waveLimit1) {
+                                    isCrossActive = true;
+                                    crossAlphaFactor = Math.max(0.1, 1.0 - (distFromCenterIndex / maxSteps));
+                                    
+                                    currentLEDColor = `hsla(${crossHue}, 100%, 75%, ${panelBrightness * crossAlphaFactor})`; 
+                                    currentLEDShadowColor = `hsl(${crossHue}, 100%, 65%)`;
+                                    currentLEDBrightness = panelBrightness * (isFlickering ? 1.2 : 2.0); 
+                                } else {
+                                    currentLEDBrightness = panelBrightness * 0.4;
+                                }
+                            }
+
+                            if (panelBrightness > 0.01) {
+                                ctx.beginPath();
+                                ctx.arc(ledX, ledY, ledRadius, 0, Math.PI * 2);
+                                ctx.fillStyle = 'rgba(29, 29, 34, 0.5)';
+                                ctx.fill();
+                                
+                                ctx.beginPath();
+                                ctx.arc(ledX, ledY, ledRadius * (isFlickering ? 0.8 : 1.0), 0, Math.PI * 2);
+                                ctx.fillStyle = currentLEDColor;
+                                
+                                if (panelBrightness > 0.3) {
+                                    ctx.shadowColor = currentLEDShadowColor;
+                                    let shadowAlpha = isCrossActive ? crossAlphaFactor : 1.0;
+                                    let bloomMultiplier = (globalTime > P2_END) ? 5.0 : 3.5;
+                                    ctx.shadowBlur = ledRadius * bloomMultiplier * currentLEDBrightness * shadowAlpha; 
+                                } else {
+                                    ctx.shadowBlur = 0;
+                                }
+                                ctx.fill();
+                            } else {
+                                ctx.beginPath();
+                                ctx.arc(ledX, ledY, ledRadius, 0, Math.PI * 2);
+                                ctx.fillStyle = 'rgba(29, 29, 34, 0.5)';
+                                ctx.shadowBlur = 0;
+                                ctx.fill();
+                            }
+                            
+                            ctx.shadowBlur = 0; 
+                        }
+                    }
+                }
+            }
+            requestAnimationFrame(drawMatrix);
+        }
+
+        requestAnimationFrame(drawMatrix);
+    </script>
+</body>
+</html>

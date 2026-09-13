@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matrice Neon - High Contrast</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      /* Pure Black Background */
+      background: #000000; 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      max-height: 95vh;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+<script>
+let cols = 12;
+let rows = 20; 
+
+let smoothX, smoothY;
+let easeAmount = 0.08; 
+
+let lastMouseX = -1;
+let lastMouseY = -1;
+let lastMoveTime = 0;
+let idleDelay = 1000; 
+
+function setup() {
+  createCanvas(1080, 1920);
+  rectMode(CENTER); 
+  
+  smoothX = width / 2;
+  smoothY = height / 2;
+}
+
+function draw() {
+  // Motion blur trails now bleed into pure black for maximum contrast
+  background(0, 0, 0, 30); 
+
+  if (mouseX !== lastMouseX || mouseY !== lastMouseY) {
+    lastMoveTime = millis();
+    lastMouseX = mouseX;
+    lastMouseY = mouseY;
+  }
+
+  let isIdle = (millis() - lastMoveTime) > idleDelay;
+  let targetX, targetY;
+  
+  if (!isIdle && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
+    targetX = mouseX;
+    targetY = mouseY;
+  } else {
+    let time = frameCount * 0.007; 
+    targetX = map(sin(time), -1, 1, 150, width - 150);
+    targetY = map(cos(time * 0.7), -1, 1, 150, height - 150);
+  }
+
+  smoothX = lerp(smoothX, targetX, easeAmount);
+  smoothY = lerp(smoothY, targetY, easeAmount);
+
+  let colWidths = [];
+  let rowHeights = [];
+  let totalWeightX = 0;
+  let totalWeightY = 0;
+
+  for (let x = 0; x < cols; x++) {
+    let baseCX = (x + 0.5) * (width / cols);
+    let dX = abs(baseCX - smoothX);
+    let weightX = 1.0 + 20.0 * exp(-dX / 140); 
+    colWidths.push(weightX);
+    totalWeightX += weightX;
+  }
+
+  for (let y = 0; y < rows; y++) {
+    let baseCY = (y + 0.5) * (height / rows);
+    let dY = abs(baseCY - smoothY);
+    let weightY = 1.0 + 20.0 * exp(-dY / 140); 
+    rowHeights.push(weightY);
+    totalWeightY += weightY;
+  }
+
+  for (let x = 0; x < cols; x++) colWidths[x] = (colWidths[x] / totalWeightX) * width;
+  for (let y = 0; y < rows; y++) rowHeights[y] = (rowHeights[y] / totalWeightY) * height;
+
+  let py = 0; 
+  for (let y = 0; y < rows; y++) {
+    let px = 0; 
+    let cellH = rowHeights[y];
+
+    for (let x = 0; x < cols; x++) {
+      let cellW = colWidths[x];
+      let cx = px + cellW / 2;
+      let cy = py + cellH / 2;
+      
+      let dToTarget = dist(cx, cy, smoothX, smoothY);
+      let alphaVal = map(dToTarget, 0, 1000, 255, 50, true); // Min alpha boosted to 50 for visibility
+
+      let focalFactor = exp(-dToTarget / 200); 
+      let finalW = lerp(cellW, min(cellW, cellH), focalFactor);
+      let finalH = lerp(cellH, min(cellW, cellH), focalFactor);
+
+      // Color Engine: Boosted saturation for "Pop"
+      let verticalFactor = cy / height; 
+      let blend = map(dToTarget, 0, 900, 0, 1, true);
+
+      // Warm Palette (Boosted)
+      let warmOuter = lerpColor(color(255, 60, 0), color(255, 120, 0), blend);
+      let warmMid   = lerpColor(color(255, 120, 0), color(255, 200, 0), blend);
+      let warmInner = lerpColor(color(255, 200, 0), color(255, 255, 255), blend);
+
+      // Cold Palette (Boosted)
+      let coldInner = lerpColor(color(0, 255, 255), color(180, 0, 255), blend);
+      let coldMid   = lerpColor(color(180, 0, 255), color(80, 0, 200), blend);
+      let coldOuter = lerpColor(color(80, 0, 200), color(20, 0, 80), blend);
+
+      let finalOuterColor = lerpColor(warmOuter, coldOuter, verticalFactor);
+      let finalMidColor   = lerpColor(warmMid, coldMid, verticalFactor);
+      let finalInnerColor = lerpColor(warmInner, coldInner, verticalFactor);
+
+      finalOuterColor.setAlpha(alphaVal);
+      finalMidColor.setAlpha(alphaVal);
+      finalInnerColor.setAlpha(alphaVal);
+
+      // Render
+      noStroke();
+      fill(finalOuterColor); rect(cx, cy, finalW * 0.9, finalH * 0.9, 100);
+      fill(finalMidColor); rect(cx, cy, finalW * 0.6, finalH * 0.6, 100);
+      fill(finalInnerColor); rect(cx, cy, finalW * 0.3, finalH * 0.3, 100);
+
+      px += cellW; 
+    }
+    py += cellH; 
+  }
+}
+</script>
+</body>
+</html>

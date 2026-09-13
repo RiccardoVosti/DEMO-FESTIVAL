@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contiguous Hope Matrix</title>
+  
+  <script src="https://unpkg.com/p5@1.9.0/lib/p5.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background-color: #030303;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #matrix-container {
+      position: relative;
+      height: 100vh;
+      width: calc(100vh * (9 / 16));
+      max-width: 100vw; 
+      overflow: hidden;
+      background: #080808;
+    }
+
+    .ambient-gradient {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      filter: blur(100px);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      animation: drift 20s infinite alternate ease-in-out;
+    }
+
+    .orb-1 {
+      width: 140%;
+      height: 70%;
+      background: radial-gradient(circle, rgba(75,80,85,0.7) 0%, rgba(5,5,5,0) 70%);
+      top: -20%;
+      left: -30%;
+      animation-delay: 0s;
+    }
+
+    .orb-2 {
+      width: 120%;
+      height: 90%;
+      background: radial-gradient(circle, rgba(40,45,50,0.6) 0%, rgba(0,0,0,0) 70%);
+      bottom: -30%;
+      right: -20%;
+      animation-delay: -10s;
+    }
+
+    @keyframes drift {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(6%, 8%) scale(1.05); }
+    }
+
+    canvas {
+      position: relative;
+      z-index: 1;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="matrix-container">
+    <div class="ambient-gradient">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+    </div>
+  </div>
+
+  <script>
+    // matrix dimensions
+    let cols = 6;
+    let rows = 18;
+    
+    let grid = [];
+    let canvasW, canvasH;
+    
+    // flexible layout arrays
+    let targetColW = [];
+    let currColW = [];
+    let targetRowH = [];
+    let currRowH = [];
+
+    const lexicon = ['hope', 'light', 'rise', 'glow', 'clear', 'dawn', 'pulse', 'spark', 'ease', '+', '—', '*', 'sys.on', '0', '1'];
+    const phrase = ['even', 'the', 'darkest', 'night', 'will', 'end'];
+    const dictionary = lexicon.concat(phrase);
+
+    function setup() {
+      let container = document.getElementById('matrix-container');
+      canvasW = container.clientWidth;
+      canvasH = container.clientHeight;
+      
+      let canvas = createCanvas(canvasW, canvasH);
+      canvas.parent('matrix-container');
+
+      colorMode(HSB, 360, 100, 100, 1);
+      textFont('neue montreal, inter, helvetica, sans-serif');
+      textAlign(CENTER, CENTER);
+
+      // initialize dimensional arrays
+      for (let x = 0; x < cols; x++) currColW[x] = canvasW / cols;
+      for (let y = 0; y < rows; y++) currRowH[y] = canvasH / rows;
+
+      initGrid();
+    }
+
+    function initGrid() {
+      grid = [];
+      for (let x = 0; x < cols; x++) {
+        grid[x] = [];
+        for (let y = 0; y < rows; y++) {
+          grid[x][y] = {
+            content: random(dictionary),
+            fontSize: random(1) > 0.9 ? random(14, 24) : random(9, 12),
+            energy: random(0, 0.2),
+            // dramatically slowed decay rate for lingering light
+            decayRate: random(0.001, 0.005) 
+          };
+        }
+      }
+    }
+
+    function draw() {
+      clear(); 
+
+      // slowed down time multiplier for a calm, sweeping transition
+      let time = millis() * 0.00015;
+
+      // 1. Calculate the ideal required target sizes for columns and rows
+      for (let x = 0; x < cols; x++) {
+        let maxW = 20; // minimum padding limit
+        for (let y = 0; y < rows; y++) {
+          textSize(grid[x][y].fontSize);
+          let tw = textWidth(grid[x][y].content);
+          if (tw + 20 > maxW) maxW = tw + 20;
+        }
+        targetColW[x] = maxW;
+      }
+
+      for (let y = 0; y < rows; y++) {
+        let maxH = 20; 
+        for (let x = 0; x < cols; x++) {
+          let th = grid[x][y].fontSize + 16;
+          if (th > maxH) maxH = th;
+        }
+        targetRowH[y] = maxH;
+      }
+
+      // 2. Smoothly lerp current sizes toward targets
+      let totalW = 0;
+      for (let x = 0; x < cols; x++) {
+        currColW[x] = lerp(currColW[x], targetColW[x], 0.08);
+        totalW += currColW[x];
+      }
+
+      let totalH = 0;
+      for (let y = 0; y < rows; y++) {
+        currRowH[y] = lerp(currRowH[y], targetRowH[y], 0.08);
+        totalH += currRowH[y];
+      }
+
+      // 3. Calculate scaling factors to perfectly fill the absolute canvas edges
+      let scaleX = canvasW / totalW;
+      let scaleY = canvasH / totalH;
+
+      // strict 1px rendering
+      strokeWeight(1);
+      
+      let currentX = 0;
+
+      // 4. Render the contiguous grid
+      for (let x = 0; x < cols; x++) {
+        let currentY = 0;
+        let w = currColW[x] * scaleX;
+
+        for (let y = 0; y < rows; y++) {
+          let h = currRowH[y] * scaleY;
+          let cell = grid[x][y];
+
+          // broadened spatial noise map (0.04) groups words so they spark together
+          let wave = noise(x * 0.04, (rows - y) * 0.04, time);
+
+          // spark condition
+          if (wave > 0.62 && cell.energy <= 0.1 && random(1) < 0.05) {
+            cell.content = random(dictionary);
+            cell.energy = 1.0;
+            cell.decayRate = random(0.002, 0.008); 
+            cell.fontSize = random(1) > 0.85 ? random(14, 28) : random(9, 12);
+          }
+
+          // energy physics
+          cell.energy -= cell.decayRate;
+          if (cell.energy < 0) cell.energy = 0;
+
+          // color and style calculations (monochromatic steely grays)
+          let hue = map(wave, 0, 1, 200, 220); 
+          let saturation = map(wave, 0.6, 1, 0, 5);
+          
+          let brightness = map(cell.energy, 0, 1, 20, 100);
+          let boxAlpha = map(cell.energy, 0, 1, 0.15, 0.5);
+
+          // prevent sub-pixel anti-aliasing by rounding coordinates for crisp 1px lines
+          let rx = Math.round(currentX);
+          let ry = Math.round(currentY);
+          let rw = Math.round(currentX + w) - rx;
+          let rh = Math.round(currentY + h) - ry;
+
+          // contiguous 1px grid box
+          stroke(hue, saturation, brightness, boxAlpha); 
+          if (cell.energy > 0.4) {
+            fill(hue, saturation, 60, cell.energy * 0.08);
+          } else {
+            noFill();
+          }
+          rect(rx, ry, rw, rh);
+
+          // typography rendering
+          noStroke();
+          let textAlpha = map(cell.energy, 0, 1, 0.25, 1.0);
+          fill(hue, saturation, brightness, textAlpha);
+          textSize(cell.fontSize);
+          
+          text(cell.content, rx + rw / 2, ry + rh / 2);
+
+          currentY += h;
+        }
+        currentX += w;
+      }
+    }
+
+    function windowResized() {
+      let container = document.getElementById('matrix-container');
+      canvasW = container.clientWidth;
+      canvasH = container.clientHeight;
+      resizeCanvas(canvasW, canvasH);
+      
+      // instantly recalculate distribution without jarring jumps
+      for (let x = 0; x < cols; x++) currColW[x] = canvasW / cols;
+      for (let y = 0; y < rows; y++) currRowH[y] = canvasH / rows;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { 
+            margin: 0; 
+            background: #ffffff; /* Sfondo generale bianco */
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        /* Scales the vertical canvas to fit the screen */
+        canvas { 
+            background: #ffffff; 
+            height: 100vh;
+            aspect-ratio: 1080 / 1920;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="starCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('starCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 1080x1920 vertical orientation
+        canvas.width = 1080;
+        canvas.height = 1920;
+
+        // Draws the 6-pointed star with a dynamic line width parameter
+        function drawStar(cx, cy, spikes, outerRadius, innerRadius, fillColor, strokeColor = null, lineWidth = 4) {
+            let rot = Math.PI / 2 * 3;
+            let x = cx, y = cy;
+            let step = Math.PI / spikes;
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - outerRadius);
+            for (let i = 0; i < spikes; i++) {
+                x = cx + Math.cos(rot) * outerRadius;
+                y = cy + Math.sin(rot) * outerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+
+                x = cx + Math.cos(rot) * innerRadius;
+                y = cy + Math.sin(rot) * innerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+            }
+            ctx.lineTo(cx, cy - outerRadius);
+            ctx.closePath();
+            
+            // Allow for transparent centers
+            if (fillColor !== "transparent") {
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+            }
+            
+            // Draw the border if requested
+            if (strokeColor) {
+                ctx.strokeStyle = strokeColor;
+                ctx.lineJoin = "round"; // Previene difetti grafici quando la stella diventa enorme
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+            }
+        }
+
+        let expandingStars = [];
+        let movingStars = [];
+        const BASE_SIZE = 50; 
+        
+        // The 8 strict radial directions (every 45 degrees) in radians
+        const RADIAL_ANGLES = [
+            0, 
+            Math.PI / 4,       
+            Math.PI / 2,       
+            (3 * Math.PI) / 4, 
+            Math.PI,           
+            (5 * Math.PI) / 4, 
+            (3 * Math.PI) / 2, 
+            (7 * Math.PI) / 4  
+        ];
+
+        function animate() {
+            // Fill background with solid WHITE
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let cx = canvas.width / 2;
+            let cy = canvas.height / 2;
+
+            // 1. Spawner for Expanding Tunnel (Seamless, no touching)
+            let isClearCenter = true;
+            for (let s of expandingStars) {
+                // Aspetta che la stella precedente sia abbastanza grande (es: 2.5x) prima di crearne un'altra
+                if (s.size < BASE_SIZE * 2.5) { 
+                    isClearCenter = false;
+                    break;
+                }
+            }
+            if (isClearCenter) {
+                expandingStars.push({ size: BASE_SIZE });
+            }
+
+            // 2. Spawner for the Moving Stars (Radial Tracks)
+            if (Math.random() < 0.6) {
+                let randomTrack = RADIAL_ANGLES[Math.floor(Math.random() * RADIAL_ANGLES.length)];
+                
+                // Assicura che le stelline non si sovrappongano
+                let isClear = true;
+                for (let s of movingStars) {
+                    if (s.angle === randomTrack && s.distance < BASE_SIZE * 2.2) {
+                        isClear = false;
+                        break;
+                    }
+                }
+
+                if (isClear) {
+                    movingStars.push({
+                        distance: 0,
+                        angle: randomTrack,           
+                        speed: 4 
+                    });
+                }
+            }
+
+            // 3. Update & Draw Expanding Tunnel Stars
+            for (let i = expandingStars.length - 1; i >= 0; i--) {
+                expandingStars[i].size *= 1.025; 
+                
+                if (expandingStars[i].size > 3000) {
+                    expandingStars.splice(i, 1);
+                }
+            }
+            
+            // Ordiniamo le stelle decrescenti per disegnare prima quelle enormi sul fondo
+            let sortedExpanding = [...expandingStars].sort((a, b) => b.size - a.size);
+            for (let s of sortedExpanding) {
+                // Scaliamo lo spessore delle linee per mantenere la proporzione 3D
+                let dynamicLineWidth = Math.max(4, s.size * 0.012); 
+
+                // A. Effetto estrusione delle stelle grandi (NERO)
+                for (let layer = 5; layer > 0; layer--) {
+                    let offset = layer * (s.size * 0.015); // L'offset dell'estrusione scala con la grandezza
+                    drawStar(cx + offset, cy + offset, 6, s.size, s.size * 0.38, "black", null);
+                }
+                
+                // B. Stella principale (BIANCA con bordo NERO)
+                drawStar(cx, cy, 6, s.size, s.size * 0.38, "white", "black", dynamicLineWidth);
+            }
+
+            // 4. Update & Draw Moving Stars (Le stelline)
+            for (let i = movingStars.length - 1; i >= 0; i--) {
+                let s = movingStars[i];
+                s.distance += s.speed;
+
+                s.x = cx + Math.cos(s.angle) * s.distance;
+                s.y = cy + Math.sin(s.angle) * s.distance;
+
+                if (s.distance > 1500) {
+                    movingStars.splice(i, 1);
+                    continue;
+                }
+
+                // Disegniamo le stelline trasparenti con bordo NERO
+                drawStar(s.x, s.y, 6, BASE_SIZE, BASE_SIZE * 0.38, "transparent", "black", 4);
+            }
+
+            // 5. Fixed Center Source Star (Bianca con bordo nero per amalgamarsi al tunnel)
+            drawStar(cx, cy, 6, BASE_SIZE, BASE_SIZE * 0.38, "white", "black", 4);
+
+            requestAnimationFrame(animate);
+        }
+
+        // Start the loop
+        animate();
+    </script>
+</body>
+</html>

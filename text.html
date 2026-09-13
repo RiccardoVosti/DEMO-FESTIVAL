@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orthogonal Generative Matrix - Snappy Easing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000000; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Strict 1080x1920 geometric container */
+        #stage {
+            width: 1080px;
+            height: 1920px;
+            background-color: #000000;
+            position: relative;
+            transform-origin: center center;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="stage"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // 1. Maintain Strict 1080x1920 Canvas Scaling
+        const stage = document.getElementById('stage');
+        function scaleStage() {
+            const scale = Math.min(window.innerWidth / 1080, window.innerHeight / 1920);
+            stage.style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', scaleStage);
+        scaleStage();
+
+        // 2. Mathematically Perfect Camera Mapping
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        
+        const fov = 30;
+        const aspect = 1080 / 1920;
+        const cameraDistance = 1920 / (2 * Math.tan((fov * Math.PI / 180) / 2));
+        
+        const camera = new THREE.PerspectiveCamera(fov, aspect, 1, 5000);
+        camera.position.set(0, 0, cameraDistance); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(1080, 1920);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        stage.appendChild(renderer.domElement);
+
+        // 3. Monochromatic Light Setup
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+        scene.add(ambientLight);
+
+        const topGrayLight = new THREE.DirectionalLight(0xdddddd, 1.0); 
+        topGrayLight.position.set(200, 800, 500);
+        scene.add(topGrayLight);
+
+        const sideDarkLight = new THREE.DirectionalLight(0x444444, 0.8); 
+        sideDarkLight.position.set(-500, -200, 200);
+        scene.add(sideDarkLight);
+
+        // 4. Sequential Gradient Textures (1=Lightest, 6=Darkest)
+        function createDiceMaterial(config) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = config.bg;
+            ctx.fillRect(0, 0, 256, 256);
+            
+            ctx.strokeStyle = config.border;
+            ctx.lineWidth = 12;
+            ctx.strokeRect(6, 6, 244, 244);
+
+            ctx.fillStyle = config.dot;
+            const radius = 24;
+            const centers = {
+                1: [[128, 128]],
+                2: [[64, 64], [192, 192]],
+                3: [[64, 64], [128, 128], [192, 192]],
+                4: [[64, 64], [192, 64], [64, 192], [192, 192]],
+                5: [[64, 64], [192, 64], [128, 128], [64, 192], [192, 192]],
+                6: [[64, 48], [192, 48], [64, 128], [192, 128], [64, 208], [192, 208]]
+            };
+
+            centers[config.n].forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(pos[0], pos[1], radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            
+            return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.1, metalness: 0.2 });
+        }
+
+        const palette = [
+            null,
+            { bg: '#FFFFFF', dot: '#000000', border: '#E2E8F0', n: 1 }, 
+            { bg: '#CBD5E1', dot: '#000000', border: '#94A3B8', n: 2 },
+            { bg: '#94A3B8', dot: '#000000', border: '#64748B', n: 3 },
+            { bg: '#475569', dot: '#FFFFFF', border: '#1E293B', n: 4 },
+            { bg: '#1E293B', dot: '#FFFFFF', border: '#0F172A', n: 5 },
+            { bg: '#000000', dot: '#FFFFFF', border: '#334155', n: 6 }  
+        ];
+
+        const materials = [
+            createDiceMaterial(palette[6]), // Right
+            createDiceMaterial(palette[3]), // Left
+            createDiceMaterial(palette[2]), // Top
+            createDiceMaterial(palette[5]), // Bottom
+            createDiceMaterial(palette[1]), // Front
+            createDiceMaterial(palette[4])  // Back
+        ];
+
+        const seqQuats = [
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),             // Shows 1
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, 0)),     // Shows 2
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI/2, 0)),     // Shows 3
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)),       // Shows 4
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0)),    // Shows 5
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI/2, 0))     // Shows 6
+        ];
+
+        // 5. Perfect 1:1 Grid Calculation
+        const boxSize = 48; 
+        const spacing = 60; 
+        const cols = 18;  // 18 * 60 = 1080
+        const rows = 32;  // 32 * 60 = 1920
+        const count = cols * rows; 
+
+        const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        const instancedMesh = new THREE.InstancedMesh(geometry, materials, count);
+        scene.add(instancedMesh);
+
+        // State machine per die
+        const diceData = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const x = (c - cols / 2 + 0.5) * spacing;
+                const y = (r - rows / 2 + 0.5) * spacing;
+                
+                diceData.push({ 
+                    x, y, 
+                    currentIdx: 0, 
+                    targetIdx: 0, 
+                    transitionPhase: 0,
+                    isTransitioning: false
+                });
+            }
+        }
+
+        // 6. Orthogonal Generative Logic & Snappy Animation
+        const dummy = new THREE.Object3D();
+        const clock = new THREE.Clock();
+
+        // Generates strict horizontal and vertical moving bands
+        function getOrthogonalPattern(x, y, t) {
+            const nx = x * 0.0025;
+            const ny = y * 0.0025;
+            
+            // X-axis dominant waves (Vertical bars moving left/right)
+            const barsX = Math.sin(nx * 14.0 + t * 1.5) + Math.sin(nx * 22.0 - t * 0.8) * 0.5;
+            
+            // Y-axis dominant waves (Horizontal bars moving up/down)
+            const barsY = Math.cos(ny * 14.0 - t * 1.8) + Math.cos(ny * 22.0 + t * 0.6) * 0.5;
+            
+            // Math.max creates right-angled intersections instead of organic curves
+            const lattice = Math.max(barsX, barsY);
+            
+            // Normalize roughly to 0 -> 1
+            return (lattice + 1.5) / 3.0; 
+        }
+
+        // EaseInOutQuart: Starts flat, snaps violently in the middle, ends flat.
+        // This is what creates the "fluent but steplike" mechanical feel.
+        function easeInOutQuart(t) {
+            return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            for (let i = 0; i < count; i++) {
+                const die = diceData[i];
+
+                // 1. Sample the orthogonal grid field
+                const rawPattern = getOrthogonalPattern(die.x, die.y, time);
+                
+                // 2. Map the value into 6 discrete states
+                let nextFace = Math.floor(rawPattern * 6);
+                nextFace = Math.max(0, Math.min(5, nextFace)); // Clamp 0-5
+
+                // 3. Trigger transition
+                if (nextFace !== die.targetIdx && !die.isTransitioning) {
+                    die.targetIdx = nextFace;
+                    die.isTransitioning = true;
+                    die.transitionPhase = 0;
+                }
+
+                // 4. Handle active transition with snappy easing
+                let zPop = 0;
+                let currentQuat = seqQuats[die.currentIdx];
+
+                if (die.isTransitioning) {
+                    // Slower phase increment combined with the Quart easing makes 
+                    // the flat ends of the curve more visible before the snap
+                    die.transitionPhase += 0.035; 
+                    
+                    let t = Math.min(die.transitionPhase, 1.0);
+                    const ease = easeInOutQuart(t);
+
+                    dummy.quaternion.copy(seqQuats[die.currentIdx]).slerp(seqQuats[die.targetIdx], ease);
+
+                    // Add a pronounced physical bounce during the fast part of the snap
+                    zPop = Math.sin(ease * Math.PI) * 24;
+
+                    if (die.transitionPhase >= 1) {
+                        die.currentIdx = die.targetIdx;
+                        die.isTransitioning = false;
+                        currentQuat = seqQuats[die.currentIdx];
+                    }
+                } else {
+                    dummy.quaternion.copy(currentQuat);
+                }
+
+                dummy.position.set(die.x, die.y, zPop);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+            }
+
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix LED - 1080x1920 25fps Dithering Fix</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #050505;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        #recordBtn {
+            margin-bottom: 20px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+            background-color: #e63946;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            z-index: 10;
+        }
+
+        #recordBtn:hover {
+            background-color: #d62828;
+        }
+
+        #recordBtn:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            height: 85vh;
+            aspect-ratio: 9 / 16;
+            background-color: #0a0a0c;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border: 1px solid rgb(51, 51, 51);
+        }
+    </style>
+</head>
+<body>
+
+    <button id="recordBtn">Registra Video (10s) - Qualità Pro</button>
+
+    <div class="canvas-wrapper">
+        <canvas id="ledCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('ledCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false }); // alpha false migliora le performance
+
+        const COLS = 5; 
+        const ROWS = 9; 
+        const LED_COLS = 8;
+        const LED_ROWS = 8; 
+
+        const TOTAL_DURATION = 10.0;
+        const P1_END = 3.0; 
+        const P2_END = 6.5; 
+
+        const P1_PROPAGATION = 0.15, P1_HOLD = 0.4, P1_FADE = 0.8;
+        const P2_SNAKE_SPEED = 0.04, P2_HOLD = 0.3, P2_FADE = 0.8;
+        const P3_DIAG_SPEED = 0.15, P3_HOLD = 0.4, P3_FADE = 1.0;
+
+        let startTimeOffset = 0;
+
+        // --- SISTEMA DI DITHERING (ANTI-BANDING) ---
+        const NOISE_SIZE = 256;
+        const noiseCanvas = document.createElement('canvas');
+        let noisePattern;
+        
+        function initDithering() {
+            noiseCanvas.width = NOISE_SIZE;
+            noiseCanvas.height = NOISE_SIZE;
+            const nCtx = noiseCanvas.getContext('2d');
+            const imgData = nCtx.createImageData(NOISE_SIZE, NOISE_SIZE);
+            
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                // Generiamo rumore in scala di grigi (Noise)
+                const val = Math.random() * 255;
+                imgData.data[i] = val;     // R
+                imgData.data[i+1] = val;   // G
+                imgData.data[i+2] = val;   // B
+                imgData.data[i+3] = 10;    // A: Opacità al ~4% (Bassa ma sufficiente a ingannare l'encoder)
+            }
+            nCtx.putImageData(imgData, 0, 0);
+        }
+        initDithering();
+
+        function applyDithering(ctx, w, h) {
+            if (!noisePattern) noisePattern = ctx.createPattern(noiseCanvas, 'repeat');
+            ctx.save();
+            // Spostamento casuale del rumore ad ogni frame per simulare la grana da pellicola dinamica
+            ctx.translate(-Math.random() * NOISE_SIZE, -Math.random() * NOISE_SIZE);
+            ctx.fillStyle = noisePattern;
+            ctx.fillRect(0, 0, w + NOISE_SIZE, h + NOISE_SIZE);
+            ctx.restore();
+        }
+        // -------------------------------------------
+
+        function resizeCanvas() {
+            canvas.width = 1080;
+            canvas.height = 1920;
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawScrews(width, height) {
+            const edgeOffset = 12; 
+            const radius = 4.5; 
+            const screwPositions = [];
+            const numScrewsX = 3; 
+            const numScrewsY = 5; 
+            
+            for (let i = 0; i < numScrewsX; i++) {
+                let x = edgeOffset + i * ((width - 2 * edgeOffset) / (numScrewsX - 1));
+                screwPositions.push({ x: x, y: edgeOffset }); 
+                screwPositions.push({ x: x, y: height - edgeOffset }); 
+            }
+            for (let i = 1; i < numScrewsY - 1; i++) {
+                let y = edgeOffset + i * ((height - 2 * edgeOffset) / (numScrewsY - 1));
+                screwPositions.push({ x: edgeOffset, y: y }); 
+                screwPositions.push({ x: width - edgeOffset, y: y }); 
+            }
+
+            screwPositions.forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#1d1d22'; 
+                ctx.fill();
+                
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#050505';
+                const cross = radius * 0.55;
+                ctx.beginPath();
+                ctx.moveTo(pos.x - cross, pos.y - cross);
+                ctx.lineTo(pos.x + cross, pos.y + cross);
+                ctx.moveTo(pos.x + cross, pos.y - cross);
+                ctx.lineTo(pos.x - cross, pos.y + cross);
+                ctx.stroke();
+            });
+        }
+
+        function drawMatrix(timestamp) {
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Sfondo scuro unito
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, width, height);
+            
+            drawScrews(width, height);
+
+            const padding = 6; 
+            const canvasPaddingX = 26; 
+            const canvasPaddingY = 26; 
+
+            const maxSpacingX = (width - canvasPaddingX * 2 - padding * (COLS - 1)) / (COLS * LED_COLS);
+            const maxSpacingY = (height - canvasPaddingY * 2 - padding * (ROWS - 1)) / (ROWS * LED_ROWS);
+            
+            const ledSpacing = Math.min(maxSpacingX, maxSpacingY);
+            const ledRadius = ledSpacing * 0.35;
+
+            const panelWidth = ledSpacing * LED_COLS;
+            const panelHeight = ledSpacing * LED_ROWS;
+
+            const gridTotalWidth = (panelWidth * COLS) + (padding * (COLS - 1));
+            const gridTotalHeight = (panelHeight * ROWS) + (padding * (ROWS - 1));
+
+            const startX = (width - gridTotalWidth) / 2;
+            const startY = (height - gridTotalHeight) / 2;
+
+            const globalTime = ((performance.now() - startTimeOffset) / 1000) % TOTAL_DURATION;
+
+            for (let c = 0; c < COLS; c++) {
+                for (let r = 0; r < ROWS; r++) {
+                    
+                    const panelX = startX + c * (panelWidth + padding);
+                    const panelY = startY + r * (panelHeight + padding);
+
+                    let panelBrightness = 0;
+
+                    if (globalTime < P1_END) {
+                        let panelDelay = (c % 2 === 0) ? r * P1_PROPAGATION : (ROWS - 1 - r) * P1_PROPAGATION;
+                        let localTime = globalTime - panelDelay;
+
+                        if (localTime > 0 && localTime <= P1_HOLD) {
+                            panelBrightness = 1.0;
+                        } else if (localTime > P1_HOLD && localTime <= P1_HOLD + P1_FADE) {
+                            panelBrightness = 1.0 - ((localTime - P1_HOLD) / P1_FADE);
+                        }
+                    } else if (globalTime < P2_END) {
+                        let p2Time = globalTime - P1_END;
+                        let snakeIndex = c * ROWS + r; 
+                        let snakeDelay = snakeIndex * P2_SNAKE_SPEED;
+                        let localTime = p2Time - snakeDelay;
+
+                        if (localTime > 0 && localTime <= P2_HOLD) {
+                            panelBrightness = 1.0;
+                        } else if (localTime > P2_HOLD && localTime <= P2_HOLD + P2_FADE) {
+                            panelBrightness = 1.0 - ((localTime - P2_HOLD) / P2_FADE);
+                        }
+                    } else {
+                        let p3Time = globalTime - P2_END;
+                        let diagIndex = c + r; 
+                        let diagDelay = diagIndex * P3_DIAG_SPEED;
+                        let localTime = p3Time - diagDelay;
+
+                        if (localTime > 0 && localTime <= P3_HOLD) {
+                            panelBrightness = 1.0;
+                        } else if (localTime > P3_HOLD && localTime <= P3_HOLD + P3_FADE) {
+                            panelBrightness = 1.0 - ((localTime - P3_HOLD) / P3_FADE);
+                        }
+                    }
+
+                    panelBrightness = Math.max(0, panelBrightness);
+
+                    let progressX = c / Math.max(1, COLS - 1);
+                    let progressY = r / Math.max(1, ROWS - 1);
+                    let gradientProgress = (progressX + progressY) / 2;
+                    let hue = 195 - (gradientProgress * 150); 
+                    
+                    let ledActiveColor = `hsla(${hue}, 100%, 75%, ${panelBrightness})`;
+                    let ledShadowColor = `hsl(${hue}, 100%, 50%)`;
+
+                    ctx.fillStyle = '#121215';
+                    ctx.beginPath();
+                    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 3);
+                    ctx.fill();
+
+                    for (let lx = 0; lx < LED_COLS; lx++) {
+                        for (let ly = 0; ly < LED_ROWS; ly++) {
+                            const ledX = panelX + (ledSpacing / 2) + (lx * ledSpacing);
+                            const ledY = panelY + (ledSpacing / 2) + (ly * ledSpacing);
+
+                            ctx.beginPath();
+                            ctx.arc(ledX, ledY, ledRadius, 0, Math.PI * 2);
+
+                            if (panelBrightness > 0.01) {
+                                ctx.fillStyle = '#1d1d22';
+                                ctx.fill();
+                                
+                                ctx.beginPath();
+                                ctx.arc(ledX, ledY, ledRadius, 0, Math.PI * 2);
+                                ctx.fillStyle = ledActiveColor;
+                                
+                                if (panelBrightness > 0.3) {
+                                    ctx.shadowColor = ledShadowColor;
+                                    ctx.shadowBlur = ledRadius * 4.0 * panelBrightness;
+                                } else {
+                                    ctx.shadowBlur = 0;
+                                }
+                                ctx.fill();
+                            } else {
+                                ctx.fillStyle = '#1d1d22';
+                                ctx.shadowBlur = 0;
+                                ctx.fill();
+                            }
+                            ctx.shadowBlur = 0; 
+                        }
+                    }
+                }
+            }
+
+            // APPLICA IL DITHERING ALLA FINE DEL FRAME (sopra tutto)
+            applyDithering(ctx, width, height);
+
+            requestAnimationFrame(drawMatrix);
+        }
+
+        requestAnimationFrame(drawMatrix);
+
+        // LOGICA DI REGISTRAZIONE VIDEO AVANZATA
+        const recordBtn = document.getElementById('recordBtn');
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        recordBtn.addEventListener('click', () => {
+            startTimeOffset = performance.now();
+            const stream = canvas.captureStream(25);
+            
+            // Forziamo un bitrate elevatissimo (20 Mbps) per proteggere i dettagli del dithering
+            let options = { 
+                mimeType: 'video/mp4',
+                videoBitsPerSecond: 20000000 // 20 Mbps
+            };
+            
+            if (!MediaRecorder.isTypeSupported('video/mp4')) {
+                if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.424028"')) {
+                    options = { mimeType: 'video/mp4; codecs="avc1.424028"', videoBitsPerSecond: 20000000 };
+                } else if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+                    // Fallback VP9 WebM che gestisce i gradienti molto meglio
+                    options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 20000000 };
+                } else {
+                    options = { videoBitsPerSecond: 20000000 };
+                }
+            }
+
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+            } catch (e) {
+                console.error(e);
+                mediaRecorder = new MediaRecorder(stream, { videoBitsPerSecond: 20000000 });
+            }
+
+            mediaRecorder.ondataavailable = function(e) {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = function() {
+                const isWebM = mediaRecorder.mimeType.includes('webm');
+                const extension = isWebM ? 'webm' : 'mp4';
+                
+                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `matrix-led-pro-1080x1920.${extension}`;
+                document.body.appendChild(a);
+                a.click();
+                
+                URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                recordedChunks = [];
+                recordBtn.innerText = 'Registra Video (10s) - Qualità Pro';
+                recordBtn.disabled = false;
+            };
+
+            mediaRecorder.start();
+            recordBtn.innerText = 'Registrazione in corso (Dithering Attivo)...';
+            recordBtn.disabled = true;
+
+            setTimeout(() => {
+                mediaRecorder.stop();
+            }, TOTAL_DURATION * 1000);
+        });
+    </script>
+</body>
+</html>
